@@ -12,15 +12,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 ET = pytz.timezone('America/New_York')
 SYMBOLS = ["QQQ", "SPY", "IWM", "TQQQ"]
 
-SIM_DATE = date(2026, 3, 5)
+SIM_DATE = date(2026, 4, 7)
 
 stock_client = StockHistoricalDataClient(api_key, secret_key)
 
-# Fetch prev day bias relative to sim date 
+
 def get_prev_day_bias_sim(symbol, reference_date):
+    """Fetch previous-day bias relative to a fixed simulation date."""
     end = datetime.combine(reference_date, datetime.min.time()).replace(tzinfo=timezone.utc)
     start = end - timedelta(days=5)
-    
+
     request = StockBarsRequest(
         symbol_or_symbols=symbol,
         timeframe=TimeFrame(1, TimeFrameUnit.Day),
@@ -28,27 +29,28 @@ def get_prev_day_bias_sim(symbol, reference_date):
         end=end,
         feed='iex'
     )
-    
+
     bars = stock_client.get_stock_bars(request)
     df = bars.df.loc[symbol].sort_index()
-    
+
     if len(df) < 2:
         return None
-    
+
     prev_day = df.iloc[-1]  # last available day before sim date
     bullish = prev_day["close"] > prev_day["open"]
     prev_close = float(prev_day["close"])
-    
+
     logging.info(f"{symbol} prev day bias: {'BULLISH' if bullish else 'BEARISH'} "
                  f"(O:{prev_day['open']:.2f} C:{prev_close:.2f})")
-    
+
     return {
         "bullish": bullish,
         "prev_close": prev_close
     }
 
-# Mock bar object to match live stream format
+
 class MockBar:
+    """Wraps a DataFrame row to match the live bar stream interface."""
     def __init__(self, row, symbol):
         self.symbol = symbol
         self.timestamp = row.name
@@ -57,6 +59,7 @@ class MockBar:
         self.low = row["low"]
         self.close = row["close"]
         self.volume = row["volume"]
+
 
 # Fetch sim day bars
 request = StockBarsRequest(
@@ -69,27 +72,30 @@ request = StockBarsRequest(
 
 bars = stock_client.get_stock_bars(request)
 
-# Import bot components
+# Import bot components — must happen after bars are fetched to avoid triggering
+# bot's module-level trading_client calls before config is verified
 import bot
-from bot import SymbolState, process_bar
+from bot import SymbolState, process_bar, _do_daily_reset
 
+bot.SIMULATION_MODE = True
 bot.states = {symbol: SymbolState(symbol) for symbol in SYMBOLS}
 bot.prev_day_bias = {}
-bot.last_reset_date = None
+bot.last_reset_date = SIM_DATE
 
 for symbol in SYMBOLS:
     bot.prev_day_bias[symbol] = get_prev_day_bias_sim(symbol, SIM_DATE)
 
-# Run sim
+# Run simulation
 for symbol in SYMBOLS:
     logging.info(f"\n--- Simulating {symbol} on {SIM_DATE} ---")
-    
+
     try:
         df = bars.df.loc[symbol].sort_index().tz_convert(ET)
         df_day = df.between_time("09:30", "16:00")
-        
+
         for timestamp, row in df_day.iterrows():
             mock_bar = MockBar(row, symbol)
             process_bar(symbol, mock_bar)
+
     except KeyError:
         logging.warning(f"{symbol} no data for {SIM_DATE}")
