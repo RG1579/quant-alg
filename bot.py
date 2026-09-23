@@ -152,7 +152,6 @@ def place_order(symbol, direction, entry, stop):
                 symbol=symbol,
                 qty=shares,
                 side=side,
-                limit_price=round(entry, 2),
                 time_in_force=TimeInForce.DAY,
                 order_class=OrderClass.BRACKET,
                 stop_loss={"stop_price": stop_price},
