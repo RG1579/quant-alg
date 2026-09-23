@@ -7,7 +7,7 @@ from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
-from alpaca.trading.requests import LimitOrderRequest
+from alpaca.trading.requests import MarketOrderRequest
 from config import *
 import csv
 import os
@@ -70,31 +70,42 @@ def get_account_equity():
     return float(account.equity)
 
 
-def get_prev_day_bias(symbol):
-    data_client = StockHistoricalDataClient(api_key, secret_key)
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(days=5)
+def get_prev_day_bias(symbol, retries=3, delay=5):
+    for attempt in range(retries):
+        try:
+            data_client = StockHistoricalDataClient(api_key, secret_key)
+            end = datetime.now(timezone.utc)
+            start = end - timedelta(days=5)
 
-    request = StockBarsRequest(
-        symbol_or_symbols=symbol,
-        timeframe=TimeFrame(1, TimeFrameUnit.Day),
-        start=start,
-        end=end,
-        feed='iex'
-    )
+            request = StockBarsRequest(
+                symbol_or_symbols=symbol,
+                timeframe=TimeFrame(1, TimeFrameUnit.Day),
+                start=start,
+                end=end,
+                feed='iex'
+            )
 
-    bars = data_client.get_stock_bars(request)
-    df = bars.df.loc[symbol].sort_index()
+            bars = data_client.get_stock_bars(request)
+            df = bars.df.loc[symbol].sort_index()
 
-    if len(df) < 2:
-        return None
+            if len(df) < 2:
+                return None
 
-    prev_day = df.iloc[-2]
-    prev_close = float(prev_day["close"])
+            prev_day = df.iloc[-2]
+            prev_close = float(prev_day["close"])
 
-    logging.info(f"{symbol} prev close: {prev_close:.2f}")
+            logging.info(f"{symbol} prev close: {prev_close:.2f}")
 
-    return {"prev_close": prev_close}
+            return {"prev_close": prev_close}
+
+        except Exception as e:
+            logging.warning(f"{symbol} get_prev_day_bias attempt {attempt + 1} failed: {e}")
+            if attempt < retries - 1:
+                import time
+                time.sleep(delay)
+
+    logging.error(f"{symbol} get_prev_day_bias failed after {retries} attempts")
+    return None
 
 
 def _do_daily_reset():
@@ -137,11 +148,10 @@ def place_order(symbol, direction, entry, stop):
             side = OrderSide.SELL
 
         order = trading_client.submit_order(
-            LimitOrderRequest(
+            MarketOrderRequest(
                 symbol=symbol,
                 qty=shares,
                 side=side,
-                type='limit',
                 limit_price=round(entry, 2),
                 time_in_force=TimeInForce.DAY,
                 order_class=OrderClass.BRACKET,
@@ -264,11 +274,20 @@ def process_bar(symbol, bar):
         entry = state.post_breakout_candle.close
         stop = breakout_mid
 
-        if state.direction == 'long' and bar.close > state.or_high:
-            if stop >= entry:
-                logging.warning(f"{symbol} Invalid setup - stop {stop:.2f} >= entry {entry:.2f}, skipping")
+        # Validate stop is on the correct side of entry with minimum distance
+        MIN_DISTANCE = 0.03
+        if state.direction == 'long':
+            if stop >= entry or (entry - stop) < MIN_DISTANCE:
+                logging.warning(f"{symbol} Invalid long setup - entry {entry:.2f} stop {stop:.2f}, skipping")
                 state.trade_taken = True
                 return
+        elif state.direction == 'short':
+            if stop <= entry or (stop - entry) < MIN_DISTANCE:
+                logging.warning(f"{symbol} Invalid short setup - entry {entry:.2f} stop {stop:.2f}, skipping")
+                state.trade_taken = True
+                return
+
+        if state.direction == 'long' and bar.close > state.or_high:
             logging.info(f"{symbol} Confirmation candle LONG - placing order")
             if SIMULATION_MODE:
                 tp = round(entry + abs(entry - stop), 2)
@@ -278,10 +297,6 @@ def process_bar(symbol, bar):
                 place_order(symbol, 'long', entry, stop)
 
         elif state.direction == 'short' and bar.close < state.or_low:
-            if stop <= entry:
-                logging.warning(f"{symbol} Invalid setup - stop {stop:.2f} <= entry {entry:.2f}, skipping")
-                state.trade_taken = True
-                return
             logging.info(f"{symbol} Confirmation candle SHORT - placing order")
             if SIMULATION_MODE:
                 tp = round(entry - abs(entry - stop), 2)
