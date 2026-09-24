@@ -108,8 +108,10 @@ pip install -r requirements.txt
 Create `config.py`:
 
 ```python
-api_key = "..."
-secret_key = "..."
+base_url = 'https://paper-api.alpaca.markets/v2'
+api_key = '...'
+secret_key = '...'
+historical_base = 'https://data.alpaca.markets/{version}'
 ```
 
 Then:
