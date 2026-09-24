@@ -6,7 +6,7 @@ A rule-based intraday Opening Range Breakout strategy in Python, with a live pap
 
 ![Equity curve with uncertainty band](docs/retest_equity.png)
 
-Both curves above score identical trades. They differ only in how the 9.2% of bars that touch both the stop and the take profit are resolved — something the data cannot determine.
+Both curves above score identical trades. They differ only in how the 9.2% of bars that touch both the stop and the take profit are resolved: something the data cannot determine.
 
 ## The strategy
 
@@ -14,8 +14,8 @@ Trades QQQ, SPY, IWM and TQQQ on 5-minute bars through the Alpaca API.
 
 1. The 09:30–09:35 bar defines the opening range
 2. Skip the day if the range is under 0.10% wide, or the open gapped more than 0.7% from the previous close
-3. Wait for a 5-minute close beyond the range — the breakout
-4. Wait for a pullback to the broken level that still closes beyond it — the retest
+3. Wait for a 5-minute close beyond the range: the breakout
+4. Wait for a pullback to the broken level that still closes beyond it: the retest
 5. Enter at the close of the next confirming candle, before 10:30
 6. Stop at the breakout candle's midpoint, take profit at 1:1, risking 1% of equity per trade
 
@@ -27,8 +27,8 @@ Most backtests silently pick one. Checking take profit first awards every ambigu
 
 This backtest refuses to pick. Every trade is scored twice:
 
-- **Optimistic** — an ambiguous bar is a win
-- **Pessimistic** — an ambiguous bar is a loss
+- **Optimistic**: an ambiguous bar is a win
+- **Pessimistic**: an ambiguous bar is a loss
 
 The true result lies between. The gap between the bounds is the resolution of the instrument, and a conclusion is only meaningful when that gap is smaller than the effect being tested.
 
@@ -69,7 +69,7 @@ Removing the retest requirement and entering at the breakout close instead:
 |---|---|---|---|---|
 | All | 5,051 | 39.5% – 58.6% | −1061 to +873 | 19.1% |
 
-Worse on the pessimistic bound and far more ambiguous, since entering earlier means an even tighter stop. The retest filter does something — it roughly halves the ambiguity rate — but not enough to push the band clear of breakeven.
+Worse on the pessimistic bound and far more ambiguous, since entering earlier means an even tighter stop. The retest filter does something, it roughly halves the ambiguity rate, but not enough to push the band clear of breakeven.
 
 A widely repeated claim is that breakouts which never pull back outperform those that do. Splitting the control arm on whether a retest later occurred appears to support it (54.5% – 67.0% versus 30.5% – 53.3%), but the split is **biased by construction**: trades that resolve before a retest could have happened are automatically tagged "never retested". Reported here as suggestive only.
 
